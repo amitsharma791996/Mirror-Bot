@@ -101,21 +101,28 @@ class MirrorListener(listeners.MirrorListeners):
             if name is None:  # when pyrogram's media.file_name is of NoneType
                 name = os.listdir(f"{DOWNLOAD_DIR}{self.uid}")[0]
             m_path = f"{DOWNLOAD_DIR}{self.uid}/{name}"
-        if self.isTar:
-            download.is_archiving = True
+        if self.isZip or self.isTar :
             try:
                 with download_dict_lock:
                     download_dict[self.uid] = TarStatus(name, m_path, size)
-                if self.isZip:
+                if self.isZip :
+                    pswd = self.pswd
                     path = m_path + ".zip"
                     LOGGER.info(f'Zip: orig_path: {m_path}, zip_path: {path}')
-                    subprocess.run(["7z", "a", path, m_path])
+                    if pswd is not None:
+                        subprocess.run(["7z", "a", "-mx=0", f"-p{pswd}", path, m_path])
+                    else:
+                        subprocess.run(["7z", "a", "-mx=0", path, m_path])
                 else:
                     path = fs_utils.tar(m_path)
             except FileNotFoundError:
-                LOGGER.info("File to archive not found!")
-                self.onUploadError("Internal error occurred!!")
+                LOGGER.info('File to archive not found!')
+                self.onUploadError('Internal error occurred!!')
                 return
+            try:
+                shutil.rmtree(m_path)
+            except:
+                os.remove(m_path)
         elif self.extract:
             download.is_extracting = True
             try:
@@ -415,11 +422,12 @@ def _mirror(bot, update,isTar=False, isZip=False, extract=False, isLeech=False):
                     link = f"{file_name}"
                 else:
                     sendMessage("ERROR: link got HTTP response:" + resp.status_code, bot, update)
-                    return        
+                    return
     elif not bot_utils.is_url(link) and not bot_utils.is_magnet(link):
         sendMessage("No download source provided", bot, update)
         return
     try:
+        gdtot_link = bot_utils.is_gdtot_link(link)
         link = direct_link_generator(link)
     except DirectDownloadLinkException as e:
         LOGGER.info(e)
@@ -454,6 +462,8 @@ def _mirror(bot, update,isTar=False, isZip=False, extract=False, isLeech=False):
             )
         sendStatusMessage(update, bot)
         drive.download(link)
+        if gdtot_link:
+            drive.deletefile(link)
 
     elif bot_utils.is_mega_link(link) and MEGA_KEY is not None and not BLOCK_MEGA_LINKS:
         mega_dl = MegaDownloader(listener)
